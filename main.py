@@ -13,6 +13,8 @@ def main():
     """Main function to run desktop object detection"""
     
     # Initialize MediaPipe Object Detector
+    # Note: Download the model file from:
+    # https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite
     base_options = python.BaseOptions(
         model_asset_path='efficientdet_lite0.tflite'
     )
@@ -29,6 +31,7 @@ def main():
     
     if not cap.isOpened():
         print("Error: Could not open webcam")
+        print("Please check if the webcam is connected and not in use by another application")
         return
     
     print("Starting object detection... Press 'q' to quit")
