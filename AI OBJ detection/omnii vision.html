@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Omni Vision | Diagnostic</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=In
+    
+    ter:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- MediaPipe Loader -->
+    <script type="module">
+        import { FilesetResolver, ObjectDetector } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm";
+        window.FilesetResolver = FilesetResolver;
+        window.ObjectDetector = ObjectDetector;
+    </script>
+
+    <style>
+        body { background-color: #000; color: #E0E0E0; font-family: 'Inter', sans-serif; overflow: hidden; margin: 0; user-select: none; touch-action: none; }
+        h1, h2, .brand-font { font-family: 'Space Grotesk', sans-serif; }
+        .glass-panel { background: rgba(10, 10, 10, 0.8); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .text-cyan { color: #00F0FF; }
+        .loader { border: 3px solid #222; border-top: 3px solid #00F0FF; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const MODEL_PATH = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
+        const WASM_PATH = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm";
+
+        const waitForGlobal = async (key) => {
+            while (!window[key]) await new Promise(r => setTimeout(r, 100));
+            return window[key];
+        };
+
+        const App = () => {
+            const [status, setStatus] = React.useState("WAITING FOR USER");
+            const [backend, setBackend] = React.useState("UNKNOWN");
+            const [cameraFacing, setCameraFacing] = React.useState('environment');
+            const [stats, setStats] = React.useState({ fps: 0, count: 0 });
+            const [isStarted, setIsStarted] = React.useState(false);
+            const [error, setError] = React.useState(null);
+
+            const toggleCamera = () => {
+                setCameraFacing(prev => prev === 'user' ? 'environment' : 'user');
+                setStatus("SWITCHING CAM...");
+            };
+
+            const handleStart = () => {
+                setIsStarted(true);
+                setStatus("INITIALIZING...");
+            };
+
+            return (
+                <div className="relative w-screen h-screen bg-black flex flex-col items-center justify-center">
+                    
+                    {/* START SCREEN (Fixes Autoplay Blocks) */}
+                    {!isStarted && !error && (
+                        <div className="z-50 text-center">
+                            <h1 className="text-3xl font-bold text-white brand-font mb-6 tracking-tighter">OMNI <span className="text-cyan">VISION</span></h1>
+                            <button 
+                                onClick={handleStart}
+                                className="bg-cyan text-black font-bold text-xl px-10 py-4 rounded-full shadow-[0_0_30px_rgba(0,240,255,0.5)] active:scale-95 transition-transform"
+                            >
+                                TAP TO START
+                            </button>
+                            <p className="text-gray-500 mt-4 text-xs font-mono">v3.5 DIAGNOSTIC MODE</p>
+                        </div>
+                    )}
+
+                    {/* MAIN UI */}
+                    {isStarted && (
+                        <>
+                            {/* Header */}
+                            <div className="absolute top-0 left-0 w-full p-4 z-20 flex justify-between items-start pointer-events-none">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${status === 'RUNNING' ? 'bg-cyan animate-pulse' : 'bg-yellow-500'}`}></div>
+                                        <span className="text-xs font-bold text-white brand-font">OMNI VISION</span>
+                                    </div>
+                                    <div className="mt-1 text-[10px] text-gray-400 font-mono space-y-1">
+                                        <div>STATUS: <span className="text-white">{status}</span></div>
+                                        <div>BACKEND: <span className={backend === 'GPU' ? 'text-green-400' : 'text-orange-400'}>{backend}</span></div>
+                                        <div>FPS: <span className="text-white">{stats.fps}</span></div>
+                                    </div>
+                                </div>
+                                <div className="glass-panel px-4 py-2 rounded-lg text-right border-l-2 border-cyan">
+                                    <div className="text-[10px] text-gray-400 uppercase font-mono">Objects</div>
+                                    <div className="text-2xl font-bold text-white leading-none">{stats.count}</div>
+                                </div>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="absolute bottom-10 w-full flex justify-center z-30 pointer-events-auto">
+                                <button onClick={toggleCamera} className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 active:scale-95 transition-all hover:bg-white/10">
+                                    <span className="text-xl">🔄</span>
+                                    <span className="text-xs font-bold uppercase tracking-widest text-white">Flip Camera</span>
+                                </button>
+                            </div>
+
+                            {/* Vision Canvas */}
+                            <VisionCanvas 
+                                cameraFacing={cameraFacing}
+                                onStatusChange={setStatus}
+                                onBackendChange={setBackend}
+                                onStatsChange={setStats}
+                                onError={setError}
+                            />
+                        </>
+                    )}
+
+                    {/* ERROR MODAL */}
+                    {error && (
+                        <div className="absolute inset-0 z-[60] bg-black/95 flex items-center justify-center p-8">
+                            <div className="text-center">
+                                <div className="text-4xl mb-4">⚠️</div>
+                                <h3 className="text-white font-bold text-xl mb-2">System Error</h3>
+                                <p className="text-red-400 font-mono text-xs mb-6 border border-red-900 bg-red-900/10 p-4 rounded">{error}</p>
+                                <button onClick={() => window.location.reload()} className="bg-white text-black px-6 py-2 rounded-full font-bold text-sm">RELOAD</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const VisionCanvas = ({ cameraFacing, onStatusChange, onBackendChange, onStatsChange, onError }) => {
+            const videoRef = React.useRef(null);
+            const canvasRef = React.useRef(null);
+            const detectorRef = React.useRef(null);
+            const requestRef = React.useRef(null);
+            
+            // Refs for stats
+            const lastTimeRef = React.useRef(0);
+            const frameCountRef = React.useRef(0);
+            const lastFpsTimeRef = React.useRef(0);
+            const detectionsRef = React.useRef([]);
+
+            React.useEffect(() => {
+                const init = async () => {
+                    try {
+                        onStatusChange("LOADING AI...");
+                        await waitForGlobal('FilesetResolver');
+                        await waitForGlobal('ObjectDetector');
+                        
+                        const vision = await window.FilesetResolver.forVisionTasks(WASM_PATH);
+                        
+                        // Try GPU
+                        try {
+                            detectorRef.current = await window.ObjectDetector.createFromOptions(vision, {
+                                baseOptions: { modelAssetPath: MODEL_PATH, delegate: "GPU" },
+                                scoreThreshold: 0.35,
+                                runningMode: "VIDEO"
+                            });
+                            onBackendChange("GPU");
+                        } catch (e) {
+                            console.warn("GPU Failed, using CPU");
+                            detectorRef.current = await window.ObjectDetector.createFromOptions(vision, {
+                                baseOptions: { modelAssetPath: MODEL_PATH, delegate: "CPU" },
+                                scoreThreshold: 0.35,
+                                runningMode: "VIDEO"
+                            });
+                            onBackendChange("CPU (Slower)");
+                        }
+                        
+                        startCamera();
+                    } catch (e) {
+                        onError(e.message);
+                    }
+                };
+                init();
+                return () => cancelAnimationFrame(requestRef.current);
+            }, []);
+
+            const startCamera = async () => {
+                onStatusChange("OPENING CAMERA...");
+                if (videoRef.current && videoRef.current.srcObject) {
+                    videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+                }
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            facingMode: cameraFacing,
+                            width: { ideal: 640 }, // VGA for speed
+                            height: { ideal: 480 } 
+                        },
+                        audio: false
+                    });
+                    
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.onloadedmetadata = () => {
+                        videoRef.current.play();
+                        onStatusChange("RUNNING");
+                        processLoop();
+                    };
+                } catch (e) {
+                    onError("Camera Access Denied: " + e.name);
+                }
+            };
+
+            React.useEffect(() => {
+                if (detectorRef.current) startCamera();
+            }, [cameraFacing]);
+
+            const processLoop = () => {
+                const video = videoRef.current;
+                const canvas = canvasRef.current;
+                const detector = detectorRef.current;
+
+                if (!video || !canvas || !detector) return;
+
+                const loop = () => {
+                    if (video.paused || video.ended) {
+                        requestRef.current = requestAnimationFrame(loop);
+                        return;
+                    }
+
+                    const now = performance.now();
+
+                    // Detect
+                    if (video.readyState >= 2) {
+                        try {
+                            const result = detector.detectForVideo(video, now);
+                            if (result.detections) detectionsRef.current = result.detections;
+                            frameCountRef.current++;
+                        } catch (e) {}
+                    }
+
+                    // FPS Update (every 500ms)
+                    if (now - lastFpsTimeRef.current > 500) {
+                        const fps = Math.round((frameCountRef.current * 1000) / (now - lastFpsTimeRef.current));
+                        onStatsChange({ fps, count: detectionsRef.current.length });
+                        frameCountRef.current = 0;
+                        lastFpsTimeRef.current = now;
+                    }
+
+                    // Draw
+                    draw();
+                    requestRef.current = requestAnimationFrame(loop);
+                };
+                loop();
+            };
+
+            const draw = () => {
+                const video = videoRef.current;
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+
+                // Sync canvas size
+                if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                }
+
+                const w = canvas.width;
+                const h = canvas.height;
+
+                ctx.clearRect(0, 0, w, h);
+                ctx.save();
+
+                // Handle Mirroring
+                if (cameraFacing === 'user') {
+                    ctx.scale(-1, 1);
+                    ctx.translate(-w, 0);
+                }
+
+                // Draw Detections
+                detectionsRef.current.forEach(det => {
+                    const { originX, originY, width, height } = det.boundingBox;
+                    const cat = det.categories[0];
+                    const label = cat.categoryName;
+                    const score = Math.round(cat.score * 100);
+
+                    // Dynamic Color
+                    let hash = 0;
+                    for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
+                    const hue = Math.abs(hash % 360);
+                    const color = `hsl(${hue}, 100%, 50%)`;
+
+                    // Box
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(originX, originY, width, height);
+
+                    // Label
+                    ctx.fillStyle = color;
+                    ctx.font = 'bold 14px "Inter", sans-serif';
+                    const text = `${label} ${score}%`;
+                    const textW = ctx.measureText(text).width + 10;
+                    ctx.fillRect(originX, originY - 24, textW, 24);
+
+                    ctx.fillStyle = '#000';
+                    ctx.save();
+                    if (cameraFacing === 'user') {
+                         ctx.translate(originX + textW/2, originY - 12);
+                         ctx.scale(-1, 1);
+                         ctx.fillText(text, -textW/2 + 5, 5);
+                    } else {
+                        ctx.fillText(text, originX + 5, originY - 7);
+                    }
+                    ctx.restore();
+                });
+
+                ctx.restore();
+            };
+
+            return (
+                <div className="relative w-full h-full bg-black flex items-center justify-center">
+                    {/* KEY FIX: use object-contain to ensure boxes align perfectly with video */}
+                    <video 
+                        ref={videoRef} 
+                        className={`absolute w-full h-full object-contain ${cameraFacing === 'user' ? 'scale-x-[-1]' : ''} z-0`} 
+                        playsInline 
+                        muted 
+                        autoPlay
+                    />
+                    <canvas 
+                        ref={canvasRef} 
+                        className="absolute w-full h-full object-contain z-10" 
+                    />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
